@@ -1,0 +1,24 @@
+{
+  "name": "memoria-sync",
+  "version": "1.0.1",
+  "description": "Memoria Sync kullanarak notlarınızı her cihazda versiyonlayın ve yedekleyin.",
+  "main": "dist/main.js",
+  "scripts": {
+    "dev": "mkdir -p dist && cp manifest.json dist/ && node esbuild.config.mjs",
+    "build": "mkdir -p dist && cp manifest.json dist/ && tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+  },
+  "keywords": [],
+  "author": "Kaan AKAY",
+  "license": "GPL-3.0-or-later",
+  "dependencies": {
+    "isomorphic-git": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "^16.11.6",
+    "builtin-modules": "^3.2.0",
+    "esbuild": "0.17.3",
+    "obsidian": "latest",
+    "tslib": "2.4.0",
+    "typescript": "4.7.4"
+  }
+}

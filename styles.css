@@ -1,0 +1,13 @@
+/* styles.css */
+.git-mobil-notice {
+  font-size: 1.2em;
+}
+.git-mobil-notice .notice-button {
+  margin-left: 10px;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.setting-item-control .git-mobil-button {
+  margin-right: 10px;
+}
+/*# sourceMappingURL=data:application/json;base64,ewogICJ2ZXJzaW9uIjogMywKICAic291cmNlcyI6IFsic3R5bGVzLmNzcyJdLAogICJzb3VyY2VzQ29udGVudCI6IFsiLmdpdC1tb2JpbC1ub3RpY2Uge1xuICBmb250LXNpemU6IDEuMmVtO1xufVxuXG4uZ2l0LW1vYmlsLW5vdGljZSAubm90aWNlLWJ1dHRvbiB7XG4gIG1hcmdpbi1sZWZ0OiAxMHB4O1xuICBiYWNrZ3JvdW5kLWNvbG9yOiB2YXIoLS1pbnRlcmFjdGl2ZS1hY2NlbnQpO1xuICBjb2xvcjogdmFyKC0tdGV4dC1vbi1hY2NlbnQpO1xufVxuXG4uc2V0dGluZy1pdGVtLWNvbnRyb2wgLmdpdC1tb2JpbC1idXR0b24ge1xuXHRtYXJnaW4tcmlnaHQ6IDEwcHg7XG59Il0sCiAgIm1hcHBpbmdzIjogIjtBQUFBO0FBQ0U7QUFBQTtBQUdGO0FBQ0U7QUFDQTtBQUNBO0FBQUE7QUFHRjtBQUNDO0FBQUE7IiwKICAibmFtZXMiOiBbXQp9Cg== */

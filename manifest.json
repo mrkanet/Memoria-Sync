@@ -1,0 +1,10 @@
+{
+  "id": "memoria-sync",
+  "name": "Git Mobil",
+  "version": "0.1.0",
+  "minAppVersion": "0.15.0",
+  "description": "Memoria Sync kullanarak notlarınızı her cihazda versiyonlayın ve yedekleyin.",
+  "author": "Kaan",
+  "authorUrl": "https://github.com/mrkanet",
+  "isDesktopOnly": false
+}
