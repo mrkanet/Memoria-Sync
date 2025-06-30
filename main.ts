@@ -1,8 +1,7 @@
-import { App, Notice, Plugin, PluginSettingTab, Setting, ButtonComponent } from 'obsidian';
+import { App, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 
-// Eklenti ayarları için arayüz
 interface GitMobilSettings {
 	repoUrl: string;
 	pat: string;
@@ -11,18 +10,20 @@ interface GitMobilSettings {
     authorName: string;
     authorEmail: string;
 	initialWarningShown: boolean;
+    corsProxy: string;
 }
 
-// Varsayılan ayarlar
 const DEFAULT_SETTINGS: GitMobilSettings = {
 	repoUrl: '',
 	pat: '',
 	branchName: 'main',
 	commitMessage: 'Obsidian notları güncellendi - {date} {time}',
-    authorName: 'Obsidian Git Mobil',
-    authorEmail: 'obsidian@example.com',
-	initialWarningShown: false
+    authorName: 'Memoria Sync',
+    authorEmail: 'memoria@example.com',
+	initialWarningShown: false,
+    corsProxy: '',
 }
+
 
 export default class GitMobilPlugin extends Plugin {
 	settings: GitMobilSettings;
@@ -32,16 +33,14 @@ export default class GitMobilPlugin extends Plugin {
 	dir = this.app.vault.adapter.getBasePath();
 
 	async onload() {
-		console.log('Git Mobil eklentisi yükleniyor...');
+        console.log('Memoria Sync eklentisi yükleniyor...');
 		await this.loadSettings();
-
 		this.addSettingTab(new GitMobilSettingTab(this.app, this));
-
         this.checkAndShowInitialWarning();
 
 		this.addCommand({
-			id: 'git-mobil-commit-push',
-			name: 'Git: Değişiklikleri Kaydet ve Gönder (Commit & Push)',
+			id: 'memoria-sync-commit-push',
+			name: 'Memoria Sync: Değişiklikleri Kaydet ve Gönder (Commit & Push)',
 			callback: async () => {
 				await this.gitCommitAll('Manuel Commit & Push');
 				await this.gitPush();
@@ -49,34 +48,92 @@ export default class GitMobilPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: 'git-mobil-pull',
-			name: 'Git: En Son Değişiklikleri Çek (Pull)',
+			id: 'memoria-sync-pull',
+			name: 'Memoria Sync: En Son Değişiklikleri Çek (Pull)',
 			callback: async () => {
 				await this.gitPull();
 			}
 		});
 
-		console.log('Git Mobil eklentisi başarıyla yüklendi.');
+		console.log('Memoria Sync eklentisi başarıyla yüklendi.');
 	}
 
+    private getGitOptions(overrides: object = {}) {
+        const url = this.settings.corsProxy 
+            ? `${this.settings.corsProxy.replace(/\/$/, '')}/${this.settings.repoUrl}`
+            : this.settings.repoUrl;
+
+        if (this.settings.corsProxy) {
+            console.log(`CORS Proxy kullanılıyor: ${this.settings.corsProxy}`);
+        }
+
+        return {
+            fs: this.fs,
+            http,
+            dir: this.dir,
+            url: url,
+            onAuth: () => ({
+                username: 'x-oauth-basic', 
+                password: this.settings.pat,
+            }),
+            ...overrides,
+        };
+    }
+
+	async testConnection(): Promise<{success: boolean; message: string; data?: any}> {
+		if (!this.settings.repoUrl || !this.settings.pat) {
+			return { success: false, message: 'Lütfen Depo URL\'si ve Erişim Belirteci alanlarını doldurun.' };
+		}
+        
+        new Notice('Bağlantı test ediliyor...');
+		try {
+            const options = this.getGitOptions();
+			const remoteInfo = await git.getRemoteInfo(options);
+
+            let message = 'Bağlantı ve kimlik doğrulama başarılı!';
+            if (remoteInfo.refs?.heads && remoteInfo.refs.heads[this.settings.branchName]) {
+                 message += ` '${this.settings.branchName}' branch'i uzak depoda bulundu.`;
+            } else {
+                 message += ` UYARI: '${this.settings.branchName}' branch'i uzak depoda bulunamadı!`;
+            }
+			return { success: true, message: message, data: remoteInfo };
+		} catch (e) {
+			console.error("Memoria Sync - Bağlantı Testi Hatası:", e); 
+            let errorMessage = this.getFriendlyErrorMessage(e);
+			return { success: false, message: `Hata: ${errorMessage}` };
+		}
+	}
+
+    getFriendlyErrorMessage(e: any): string {
+        if (e.message?.toLowerCase().includes('failed to fetch')) {
+            const corsMessage = "Ayarlar'dan bir CORS proxy (örn: https://cors.isomorphic-git.org) ayarlamayı deneyin veya masaüstü uygulamasında proxy'yi boş bırakın.";
+            return `Ağ hatası: Sunucuya ulaşılamadı. Bu, bir CORS ilkesi veya ağ sorunudur. ${corsMessage} Detaylar için geliştirici konsolunu kontrol edin.`;
+        }
+        if (e.code === 'HTTPError' || e.name === 'HttpError') {
+            const statusCode = e.data?.statusCode || e.response?.status;
+            if (statusCode === 401 || statusCode === 403) {
+                return "Kimlik doğrulama başarısız (403 Forbidden). PAT geçersiz, süresi dolmuş veya gerekli 'repo' izinlerine sahip değil. Deponuz bir organizasyona aitse SSO yetkilendirmesini kontrol edin.";
+            } else if (statusCode === 404) {
+                return "Depo bulunamadı. Lütfen URL'yi kontrol edin.";
+            }
+        }
+        if (e.code === 'ENOTFOUND') {
+            return "Sunucu bulunamadı. URL'yi veya internet bağlantınızı kontrol edin.";
+        }
+        return e.message;
+    }
+    
     checkAndShowInitialWarning() {
         if (!this.settings.initialWarningShown) {
-            const notice = new Notice(document.createDocumentFragment(), 0); // 0 = kalıcı
+            const notice = new Notice(document.createDocumentFragment(), 0);
             const message = notice.noticeEl.createDiv({ cls: "git-mobil-notice" });
             message.createEl("h3", { text: "Önemli Bilgilendirme: Notlarınızın Güvenliği İçin!" });
             message.createEl("p", { text: "Bu eklenti, notlarınızı Git ile versiyonlamanızı sağlar. Veri kaybı riskini en aza indirmek için lütfen talimatları dikkatlice takip edin ve mevcut notlarınızın manuel bir yedeğini alın." });
-
             const buttonContainer = notice.noticeEl.createDiv();
             const settingsButton = buttonContainer.createEl("button", { text: "Ayarlara Git", cls: "notice-button" });
-            settingsButton.onclick = () => {
-                this.app.setting.open();
-                this.app.setting.openTabById(this.manifest.id);
-                notice.hide();
-            };
-
+            settingsButton.onclick = () => { this.app.setting.open(); this.app.setting.openTabById(this.manifest.id); notice.hide(); };
             const dismissButton = buttonContainer.createEl("button", { text: "Kapat", cls: "notice-button" });
             dismissButton.onclick = () => notice.hide();
-            
             this.settings.initialWarningShown = true;
             this.saveSettings();
         }
@@ -88,8 +145,8 @@ export default class GitMobilPlugin extends Plugin {
 			await git.init({ fs: this.fs, dir: this.dir });
 			new Notice('Git deposu başarıyla başlatıldı!');
 		} catch (e) {
-			console.error(e);
-			new Notice(`Hata: ${e.message}`);
+			console.error("Memoria Sync - Git Init Hatası:", e);
+			new Notice(`Hata: ${this.getFriendlyErrorMessage(e)}`);
 		}
 	}
 
@@ -98,60 +155,42 @@ export default class GitMobilPlugin extends Plugin {
 			new Notice('Lütfen depo URL\'sini ve Erişim Belirtecini (PAT) ayarlardan girin.');
 			return;
 		}
-		new Notice('Depo klonlanıyor... Bu işlem biraz sürebilir.');
+		new Notice('Depo klonlanıyor...');
 		try {
-			await git.clone({
-				fs: this.fs,
-				http,
-				dir: this.dir,
-				url: this.settings.repoUrl,
-				ref: this.settings.branchName,
-				singleBranch: true,
-				depth: 1,
-				onAuth: () => ({ username: this.settings.pat })
-			});
+            const options = this.getGitOptions({
+                ref: this.settings.branchName,
+                singleBranch: true,
+                depth: 1,
+            });
+			await git.clone(options);
 			new Notice('Depo başarıyla klonlandı!');
-            
-            // Boş depo kontrolü
 			const files = await this.fs.list(this.dir);
 			if (files.files.length === 0 && files.folders.length === 1 && files.folders[0].endsWith('.git')) {
                 new Notice('Boş bir depo klonlandı. İlk commit oluşturuluyor...');
                 await this.gitCommitAll('İlk Obsidian Notları Yedeği');
                 await this.gitPush();
             }
-
 		} catch (e) {
-			console.error(e);
-            let errorMessage = `Klonlama hatası: ${e.message}`;
-            if (e.data?.statusCode === 401 || e.data?.statusCode === 403) {
-                errorMessage = "Kimlik doğrulama başarısız. Erişim Belirtecinizi (PAT) kontrol edin.";
-            } else if (e.data?.statusCode === 404) {
-                errorMessage = "Depo bulunamadı. Lütfen URL'yi kontrol edin.";
-            }
-			new Notice(errorMessage, 10000);
+			console.error("Memoria Sync - Klonlama Hatası:", e);
+			new Notice(`Klonlama hatası: ${this.getFriendlyErrorMessage(e)}`, 10000);
 		}
 	}
 
 	async gitCommitAll(message?: string) {
-		new Notice('Değişiklikler kaydediliyor (commit)...');
+        new Notice('Değişiklikler kaydediliyor (commit)...');
 		try {
-			// Tüm dosyaları ekle (isomorphic-git'te add tümünü kapsar)
             const status = await git.statusMatrix({ fs: this.fs, dir: this.dir });
-            await Promise.all(
-                status.map(([filepath, ...statuses]) => {
-                    if (statuses.some(s => s !== 0)) { // 0 = unmodified
-                       return git.add({ fs: this.fs, dir: this.dir, filepath });
-                    }
-                })
-            );
+            const filesToCommit = status.filter(([filepath, ...statuses]) => statuses[1] !== 1 || statuses[2] !== 1);
             
-            // Eğer eklenecek bir şey yoksa commit atma
-            const freshStatus = await git.statusMatrix({ fs: this.fs, dir: this.dir });
-            if (freshStatus.every(([filepath, head, workdir, stage]) => head === 1 && workdir === 1 && stage === 1)) {
-                 new Notice('Kaydedilecek yeni değişiklik bulunmuyor.');
-                 return;
+            if (filesToCommit.length === 0) {
+                new Notice('Kaydedilecek yeni değişiklik bulunmuyor.');
+                return;
             }
 
+            await Promise.all(
+                filesToCommit.map(([filepath]) => git.add({ fs: this.fs, dir: this.dir, filepath }))
+            );
+            
 			const commitMessage = (message || this.settings.commitMessage)
 				.replace('{date}', new Date().toLocaleDateString())
 				.replace('{time}', new Date().toLocaleTimeString());
@@ -164,61 +203,50 @@ export default class GitMobilPlugin extends Plugin {
 			});
 			new Notice(`Değişiklikler başarıyla kaydedildi! Commit: ${sha.slice(0, 7)}`);
 		} catch (e) {
-			console.error(e);
-			new Notice(`Commit hatası: ${e.message}`, 10000);
+			console.error("Memoria Sync - Commit Hatası:", e);
+			new Notice(`Commit hatası: ${this.getFriendlyErrorMessage(e)}`, 10000);
 		}
 	}
 
 	async gitPush() {
-		new Notice('Değişiklikler uzak depoya gönderiliyor (push)...');
+		new Notice('Değişiklikler gönderiliyor (push)...');
 		try {
-			const result = await git.push({
-				fs: this.fs,
-				http,
-				dir: this.dir,
-				onAuth: () => ({ username: this.settings.pat }),
-			});
+            const options = this.getGitOptions();
+			const result = await git.push(options);
 			if (result.ok) {
 				new Notice('Değişiklikler başarıyla gönderildi!');
 			} else {
-				throw new Error(result.errors.join('\n'));
+                // Daha anlamlı bir hata mesajı için
+                const errorDetails = result.errors ? result.errors.join(', ') : 'Bilinmeyen hata.';
+				throw new Error(`Push işlemi başarısız: ${errorDetails}`);
 			}
 		} catch (e) {
-			console.error(e);
-			new Notice(`Push hatası: ${e.message}`, 10000);
+			console.error("Memoria Sync - Push Hatası:", e);
+			new Notice(`Push hatası: ${this.getFriendlyErrorMessage(e)}`, 10000);
 		}
 	}
 
 	async gitPull() {
 		new Notice('Değişiklikler çekiliyor (pull)...');
 		try {
-			await git.pull({
-				fs: this.fs,
-				http,
-				dir: this.dir,
-				ref: this.settings.branchName,
-				singleBranch: true,
-				author: { name: this.settings.authorName, email: this.settings.authorEmail },
-				onAuth: () => ({ username: this.settings.pat }),
-			});
+            const options = this.getGitOptions({
+                ref: this.settings.branchName,
+                singleBranch: true,
+                author: { name: this.settings.authorName, email: this.settings.authorEmail },
+            });
+			await git.pull(options);
 			new Notice('Değişiklikler başarıyla çekildi ve birleştirildi!');
 		} catch (e) {
-			console.error(e);
-			new Notice(`Pull hatası: ${e.message}`, 10000);
+			console.error("Memoria Sync - Pull Hatası:", e);
+			new Notice(`Pull hatası: ${this.getFriendlyErrorMessage(e)}`, 10000);
 		}
 	}
 
 	onunload() {
-		console.log('Git Mobil eklentisi kaldırılıyor...');
+		console.log('Memoria Sync eklentisi kaldırılıyor...');
 	}
-
-	async loadSettings() {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-	}
-
-	async saveSettings() {
-		await this.saveData(this.settings);
-	}
+	async loadSettings() { this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); }
+	async saveSettings() { await this.saveData(this.settings); }
 }
 
 class GitMobilSettingTab extends PluginSettingTab {
@@ -232,10 +260,9 @@ class GitMobilSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		containerEl.createEl('h2', { text: 'Git Mobil Ayarları' });
+		containerEl.createEl('h2', { text: 'Memoria Sync Ayarları' });
 
-		// --- Bağlantı Ayarları ---
-		new Setting(containerEl)
+        new Setting(containerEl)
 			.setName('Git Deposu URL\'si')
 			.setDesc('Notlarınızın yedekleneceği uzak Git deposunun tam URL\'si.')
 			.addText(text => text
@@ -259,7 +286,21 @@ class GitMobilSettingTab extends PluginSettingTab {
 					});
 			});
 
-		// --- Operasyonel Ayarlar ---
+        new Setting(containerEl)
+            .setName('CORS Proxy Sunucusu')
+            .setDesc(
+                "Ağ hatalarını (özellikle 'failed to fetch') çözmek için bir proxy sunucusu kullanın. Mobil cihazlarda genellikle gereklidir. Örn: https://cors.isomorphic-git.org"
+            )
+            .addText((text) =>
+                text
+                    .setPlaceholder('İsteğe bağlı')
+                    .setValue(this.plugin.settings.corsProxy)
+                    .onChange(async (value) => {
+                        this.plugin.settings.corsProxy = value.trim();
+                        await this.plugin.saveSettings();
+                    })
+            );
+
         containerEl.createEl('h3', { text: 'Operasyonel Ayarlar' });
 		new Setting(containerEl)
 			.setName('Hedef Branch Adı')
@@ -280,8 +321,27 @@ class GitMobilSettingTab extends PluginSettingTab {
 					this.plugin.settings.commitMessage = value || DEFAULT_SETTINGS.commitMessage;
 					await this.plugin.saveSettings();
 				}));
-        
-        // --- Durum ve Eylemler ---
+
+        containerEl.createEl('h3', { text: 'Bağlantı Testi' });
+        const validationEl = containerEl.createDiv();
+        new Setting(containerEl)
+            .setName("Ayarları Doğrula")
+            .setDesc("Girdiğiniz bilgilerin doğruluğunu uzak sunucuya bağlanarak test edin.")
+            .addButton(button => button
+                .setButtonText("Bağlantıyı Test Et")
+                .setCta()
+                .onClick(async () => {
+                    const result = await this.plugin.testConnection();
+                    const statusEl = validationEl.querySelector('.validation-status') || validationEl.createDiv({ cls: 'validation-status' });
+                    statusEl.setText(result.message);
+                    statusEl.className = 'validation-status';
+                    if (result.success) {
+                        statusEl.addClass('validation-success');
+                    } else {
+                        statusEl.addClass('validation-error');
+                    }
+                }));
+
         containerEl.createEl('h3', { text: 'Durum ve Eylemler' });
         const statusEl = containerEl.createEl("div");
         this.renderStatusAndActions(statusEl);
@@ -293,9 +353,9 @@ class GitMobilSettingTab extends PluginSettingTab {
         let gitRepoExists = false;
         try {
             // @ts-ignore
-            gitRepoExists = await this.plugin.fs.stat(this.plugin.dir + '/.git') !== undefined;
+            await this.plugin.fs.stat(this.plugin.dir + '/.git');
+            gitRepoExists = true;
         } catch (e) {
-            // Stat hata verirse dosya yoktur.
             gitRepoExists = false;
         }
 

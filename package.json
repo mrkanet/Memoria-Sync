@@ -11,6 +11,7 @@
   "author": "Kaan AKAY",
   "license": "GPL-3.0-or-later",
   "dependencies": {
+    "@isomorphic-git/lightning-fs": "^4.6.2",
     "isomorphic-git": "latest"
   },
   "devDependencies": {
